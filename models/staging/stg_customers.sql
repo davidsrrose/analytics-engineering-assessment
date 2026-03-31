@@ -58,14 +58,14 @@ customer_email_ranked as (
         email,
         country_code,
         created_at,
+        -- row_number() assigns 1, 2, 3... within each email group
+        -- partition by email restarts that numbering for each distinct email
+        -- order by created_at/customer_id decides which row gets rank 1
         row_number() over (
             partition by email
             order by created_at asc, customer_id asc
         ) as email_record_rank
     from customers_normalized
-    -- row_number() assigns 1, 2, 3... within each email group
-    -- partition by email restarts that numbering for each distinct email
-    -- order by created_at/customer_id decides which row gets rank 1
 
 )
 
