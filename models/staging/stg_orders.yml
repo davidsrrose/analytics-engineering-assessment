@@ -1,0 +1,102 @@
+version: 2
+
+models:
+  - name: stg_orders
+    description: |
+      Cleaned table of order information.
+
+      This model keeps one row per order_id, standardizes core order fields,
+      and surfaces data quality flags for duplicate orders, invalid dates,
+      missing amounts, and unusual cancelled-order amounts.
+
+    meta:
+      table_grain: one row per deduplicated order_id
+      
+      source_data_quality_assumptions:
+        - order_id - assume there may be duplicates, assume order_id is valid format.
+        - customer_id - assume customer_id may not link/ exist in customers input table. assume customer_id is valid format
+        - order_date - assume date that order_id was placed
+        - status - assume only options are ['pending', 'refunded', 'completed', 'shipped', 'cancelled']
+        - total_amount - assume null is a "missing" amount
+        - currency - Assume always USD
+        - updated_at - assume this is source systems timestamp for order record
+
+      possible_future_improvements:
+        - Add levels (warn vs error) for dbt tests
+        - add order id format test
+
+
+    columns:
+      # source table columns
+      - name: order_id
+        description: Unique identifier for an order after duplicate source rows are resolved.
+        tests:
+          - not_null
+          - unique
+
+      - name: customer_id
+        description: Identifier for the customer who placed the order.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_customers')
+                field: customer_id
+
+      - name: order_date
+        description: Date the order was placed.
+
+      - name: status
+        description: Current business status of the order.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['pending', 'refunded', 'completed', 'shipped', 'cancelled']
+
+      - name: total_amount
+        description: Order amount as a numeric value; missing source amounts remain null and are flagged separately.
+
+      - name: currency
+        description: Standardized order currency code.
+        tests:
+          - not_null
+          - accepted_values:
+              config:
+                severity: warn
+              arguments:
+                values: ['USD']
+
+      - name: updated_at
+        description: Most recent source-system update timestamp for the order.
+
+
+      # flag & debug columns
+      - name: had_duplicate_order_id
+        description: Flag showing whether the order_id appeared more than once in the raw orders data.
+
+      - name: duplicate_order_id_count
+        description: Number of raw rows that shared the same order_id.
+
+      - name: has_invalid_order_date
+        description: Flag showing whether the source order date could not be parsed into a valid date.
+
+      - name: has_invalid_updated_at
+        description: Flag showing whether the source updated_at value could not be parsed into a valid timestamp.
+
+      - name: has_missing_total_amount
+        description: Flag showing whether the order is missing an amount.
+
+      - name: has_future_order_date
+        description: Flag showing whether the order date falls after the expected Jan-Mar 2024 seed window.
+
+      - name: has_too_old_order_date
+        description: Flag showing whether the order date falls before the expected 2024 reporting window.
+
+      - name: has_near_zero_cancelled_amount
+        description: Flag showing whether a cancelled order carries a near-zero amount at or below 1.
+
+      - name: is_valid_order
+        description: Flag showing whether the order passes the core quality checks used in downstream reporting.
+
+      # enrichment columns

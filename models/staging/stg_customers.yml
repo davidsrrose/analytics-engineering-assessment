@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: stg_customers
+    description: |
+      Cleaned table of customer inforomation.
+      
+      This model standardizes customer email and country values while preserving
+      one row per customer_id from the source data.
+
+      It also adds country names and flags duplicate-email situations so those
+      records can be reviewed separately from normal reporting use.
+    meta:
+      table_grain: one row per deduplicated customer_id
+
+      source_data_quality_assumptions:
+        - customer_id - preserved at the source grain and expected to remain unique in staging.
+        - email - normalized with `trim()` and `lower()` before duplicate detection so duplicate-email records can be counted and ranked consistently.
+        - country - standardized to uppercase, with raw `UK` values normalized to `GB` so the code aligns to the country-code reference seed.
+        - created_at - used to rank records within each normalized email group so the earliest row can be flagged as the primary email record.
+      
+      possbile_todo_improvements:
+        - Add levels (warn vs error) for dbt tests
+        - Test customer_id format
+        - Test date validity of `created_at`
+        - Add test for malformed emails
+        - Add tests for null or malformed `created_at` values.
+
+    columns:
+      # source table columns
+      - name: customer_id
+        description: Unique identifier for a customer.
+        tests:
+          - not_null
+          - unique
+
+      - name: email
+        description: Customer email address after trimming whitespace and converting to lowercase.
+        tests:
+          - not_null
+
+      - name: country_code
+        description: Standardized two-letter country code for the customer.
+        tests:
+          # not_null test, as relationship test will not fail on null child values
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('country_codes')
+                field: country_code
+
+      - name: created_at
+        description: Date the customer record was created in the source system.
+
+
+      # flag & debug columns
+      - name: is_duplicate_email_record
+        description: Flag showing whether the same email is used by more than one customer record.
+      
+      - name: is_primary_email_record
+        description: Flag showing which customer record is treated as the primary record within a shared email group.
+
+      - name: email_record_count
+        description: Number of customer records sharing the same normalized email address.
+
+      # enrichment columns
+      - name: country_name
+        description: Business-friendly country name derived from the country code.
